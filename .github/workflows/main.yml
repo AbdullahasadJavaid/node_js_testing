@@ -34,14 +34,14 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_PUBLIC_IP }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
 
           ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
 
-          scp -r . $EC2_USER@$EC2_HOST:/app
+          scp -i ~/.ssh/id_ed25519 -r . $EC2_USER@$EC2_HOST:/app
 
-          ssh $EC2_USER@$EC2_HOST << 'EOF'
+          ssh -i ~/.ssh/id_ed25519 $EC2_USER@$EC2_HOST << 'EOF'
             cd /app
             npm install -g pm2
             npm install
