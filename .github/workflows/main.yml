@@ -4,90 +4,32 @@ on:
   push:
     branches:
       - main
-      
-
+  workflow_dispatch:
+    
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout code
+      # 1️⃣ Checkout code (for CI only, not EC2)
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Print GitHub context (DEBUG)
-      - name: Debug GitHub context
-        run: |
-          echo "==== GitHub Context ===="
-          echo "Actor: $GITHUB_ACTOR"
-          echo "Repo: $GITHUB_REPOSITORY"
-          echo "Branch: $GITHUB_REF"
-          echo "Commit: $GITHUB_SHA"
-          echo "Event: $GITHUB_EVENT_NAME"
-          echo "========================"
-
-      # 3️⃣ Setup Node.js
+      # 2️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # 4️⃣ Verify Node & npm (DEBUG)
-      - name: Debug Node & npm versions
-        run: |
-          echo "Node version:"
-          node -v
-          echo "NPM version:"
-          npm -v
-
-      # 5️⃣ List repo files (DEBUG – very important)
-      - name: Debug repository structure
-        run: |
-          echo "==== Repository files ===="
-          ls -la
-          echo "=========================="
-
-      # 6️⃣ Install dependencies locally
-      - name: Install dependencies
-        run: |
-          echo "==== npm install (local) ===="
-          npm install --verbose
-          echo "=============================="
-
-      # 7️⃣ Build app (optional)
-      - name: Build app
-        run: |
-          echo "==== Build step ===="
-          npm run build --if-present
-          echo "===================="
-
-      # 8️⃣ Setup SSH
+      # 3️⃣ Setup SSH
       - name: Setup SSH
         run: |
-          echo "==== Setting up SSH ===="
           mkdir -p ~/.ssh
-
-          echo "Writing SSH key..."
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
-          echo "Scanning EC2 host key..."
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-          echo "SSH setup completed"
-          echo "======================"
-
-      # 9️⃣ Test SSH connection (DEBUG – CRITICAL)
-      - name: Debug SSH connection
-        run: |
-          echo "==== Testing SSH connection ===="
-          ssh -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=10 \
-              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-              "echo 'SSH connection successful' && whoami && hostname"
-          echo "================================"
-
-      # 🔟 Deploy to EC2 (WITH REMOTE DEBUG)
+      # 4️⃣ Deploy to EC2
       - name: Deploy to EC2
         run: |
           echo "==== Starting deployment ===="
@@ -96,43 +38,34 @@ jobs:
             set -e
             set -x
 
+            APP_DIR="${{ secrets.APP_DIR }}"
+            REPO_URL="https://github.com/YOUR_USERNAME/YOUR_REPO.git"
+
             echo "---- Connected to EC2 ----"
             whoami
             hostname
-            pwd
 
             echo "---- Moving to app directory ----"
-            cd ${{ secrets.APP_DIR }} || { echo "❌ APP_DIR not found"; exit 1; }
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
 
-            echo "Current directory:"
-            pwd
+            echo "---- Checking Git repository ----"
+            if [ ! -d ".git" ]; then
+              echo "📦 Repo not found. Cloning..."
+              git clone "$REPO_URL" .
+            else
+              echo "📦 Repo found. Updating..."
+              git reset --hard
+              git clean -fd
+              git pull origin main
+            fi
 
-            echo "---- Listing files ----"
-            ls -la
-
-            echo "---- Git status ----"
-            git status
-
-            echo "---- Resetting repo ----"
-            git reset --hard
-            git clean -fd
-
-            echo "---- Pulling latest code ----"
-            git pull origin main
-
-            echo "---- Installing dependencies (EC2) ----"
+            echo "---- Installing dependencies ----"
             npm install --verbose
 
-            echo "---- PM2 status before restart ----"
-            pm2 list || true
-
             echo "---- Restarting app ----"
-            pm2 restart all || pm2 start index.js --name node-backend
+            pm2 restart node-backend || pm2 start index.js --name node-backend
 
-            echo "---- PM2 status after restart ----"
-            pm2 list
-
-            echo "---- Saving PM2 ----"
             pm2 save
 
             echo "✅ Deployment completed successfully"
