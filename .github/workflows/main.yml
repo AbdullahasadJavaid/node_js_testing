@@ -1,51 +1,44 @@
-name: Deploy to EC2 instance
+name: Node.js CI/CD to EC2
+
 on:
   push:
     branches:
       - main
-      # - staging
-    workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
 
-      - name: Install dependencies
-        run: npm install
+    - name: Install dependencies
+      run: npm install
 
-      - name: Run tests
-        run: echo "no test available."
+    - name: Build app (if required)
+      run: npm run build --if-present
 
-      # - name: Build application
-      #   run: npm run build
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to EC2 with PM2
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_HOST: ${{ secrets.EC2_PUBLIC_IP }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-
-          ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
-
-          scp -i ~/.ssh/id_ed25519 -r . $EC2_USER@$EC2_HOST:/app
-
-          ssh -i ~/.ssh/id_ed25519 $EC2_USER@$EC2_HOST << 'EOF'
-            cd /app
-            npm install -g pm2
-            npm install
-            pm2 stop backend || true
-            pm2 start npm --name "backend" -- start
-            pm2 save
-          EOF
+    - name: Deploy to EC2
+      run: |
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd ${{ secrets.APP_DIR }} || exit 1
+          git pull origin main
+          npm install
+          pm2 restart all || pm2 start index.js --name node-backend
+        EOF
