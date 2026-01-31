@@ -5,17 +5,17 @@ on:
     branches:
       - main
   workflow_dispatch:
-    
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout code (for CI only, not EC2)
+      # 1️⃣ Checkout code (CI side only)
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node.js
+      # 2️⃣ Setup Node.js (ONLY for GitHub runner, optional)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -45,6 +45,22 @@ jobs:
             whoami
             hostname
 
+            # 🔑 LOAD NVM (THIS WAS MISSING)
+            echo "---- Loading NVM ----"
+            export NVM_DIR="$HOME/.nvm"
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+              . "$NVM_DIR/nvm.sh"
+            else
+              echo "❌ NVM not found"
+              exit 1
+            fi
+
+            nvm use 22
+
+            echo "Node version:"
+            node -v
+            npm -v
+
             echo "---- Moving to app directory ----"
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
@@ -64,7 +80,7 @@ jobs:
             npm install --verbose
 
             echo "---- Restarting app ----"
-            pm2 restart node-backend || pm2 start index.js --name node-backend
+            pm2 restart node-backend || pm2 start app.js --name node-backend
 
             pm2 save
 
