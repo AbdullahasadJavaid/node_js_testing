@@ -21,10 +21,10 @@ jobs:
         run: npm install
 
       - name: Run tests
-        run: echo "no test available"
+        run: echo "no test available."
 
-      - name: Build application
-        run: npm run build
+      # - name: Build application
+      #   run: npm run build
 
       - name: Deploy to EC2 with PM2
         env:
