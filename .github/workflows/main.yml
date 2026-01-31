@@ -1,51 +1,96 @@
-name: Node.js CI/CD to EC2
+name: CI Debug Workflow
 
 on:
   push:
     branches:
       - main
+      - develop
+  pull_request:
 
 jobs:
-  deploy:
+  debug-job:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout code
-      - name: Checkout code
+      # 1. Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node.js
+      # 2. Print basic GitHub context
+      - name: Print GitHub context
+        run: |
+          echo "==== GitHub Context ===="
+          echo "Actor: $GITHUB_ACTOR"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Ref: $GITHUB_REF"
+          echo "SHA: $GITHUB_SHA"
+          echo "Event name: $GITHUB_EVENT_NAME"
+          echo "========================"
+
+      # 3. Print runner details
+      - name: Print runner info
+        run: |
+          echo "==== Runner Info ===="
+          uname -a
+          echo "Current directory:"
+          pwd
+          echo "====================="
+
+      # 4. List files (VERY useful for debugging)
+      - name: List repository files
+        run: |
+          echo "==== Repository Files ===="
+          ls -la
+          echo "=========================="
+
+      # 5. Print environment variables (filtered)
+      - name: Print environment variables
+        run: |
+          echo "==== Environment Variables ===="
+          env | sort
+          echo "==============================="
+
+      # 6. Example: Node.js setup (MERN-style)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # 3️⃣ Install dependencies locally (optional)
+      - name: Verify Node & NPM
+        run: |
+          echo "Node version:"
+          node -v
+          echo "NPM version:"
+          npm -v
+
+      # 7. Install dependencies with debug output
       - name: Install dependencies
-        run: npm install
-
-      # 4️⃣ Build app (optional)
-      - name: Build app
-        run: npm run build --if-present
-
-      # 5️⃣ Setup SSH
-      - name: Setup SSH
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          echo "==== Installing dependencies ===="
+          npm install --verbose
+          echo "================================="
 
-      # 6️⃣ Deploy to EC2
-      - name: Deploy to EC2
+      # 8. Example: Custom debug check (naming / structure)
+      - name: Debug project structure
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
-          cd ${{ secrets.APP_DIR }} || exit 1
-          git reset --hard
-          git clean -fd
-          git pull origin main
-          npm install
-          pm2 restart all || pm2 start index.js --name node-backend
-          pm2 save
-          echo "Deployment completed!"
-          ENDSSH
+          echo "==== Checking folder structure ===="
+          if [ ! -d "src" ]; then
+            echo "❌ src folder NOT found"
+            exit 1
+          else
+            echo "✅ src folder found"
+          fi
+
+          echo "Contents of src:"
+          ls -la src
+          echo "==================================="
+
+      # 9. Example test step with debug
+      - name: Run tests (if any)
+        run: |
+          echo "==== Running tests ===="
+          npm test || {
+            echo "❌ Tests failed"
+            exit 1
+          }
+          echo "✅ Tests passed"
