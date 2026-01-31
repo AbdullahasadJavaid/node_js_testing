@@ -1,96 +1,140 @@
-name: CI Debug Workflow
+name: Node.js CI/CD to EC2
 
 on:
   push:
     branches:
       - main
-      - develop
-  pull_request:
 
 jobs:
-  debug-job:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout code
-      - name: Checkout repository
+      # 1️⃣ Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Print basic GitHub context
-      - name: Print GitHub context
+      # 2️⃣ Print GitHub context (DEBUG)
+      - name: Debug GitHub context
         run: |
           echo "==== GitHub Context ===="
           echo "Actor: $GITHUB_ACTOR"
-          echo "Repository: $GITHUB_REPOSITORY"
-          echo "Ref: $GITHUB_REF"
-          echo "SHA: $GITHUB_SHA"
-          echo "Event name: $GITHUB_EVENT_NAME"
+          echo "Repo: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF"
+          echo "Commit: $GITHUB_SHA"
+          echo "Event: $GITHUB_EVENT_NAME"
           echo "========================"
 
-      # 3. Print runner details
-      - name: Print runner info
-        run: |
-          echo "==== Runner Info ===="
-          uname -a
-          echo "Current directory:"
-          pwd
-          echo "====================="
-
-      # 4. List files (VERY useful for debugging)
-      - name: List repository files
-        run: |
-          echo "==== Repository Files ===="
-          ls -la
-          echo "=========================="
-
-      # 5. Print environment variables (filtered)
-      - name: Print environment variables
-        run: |
-          echo "==== Environment Variables ===="
-          env | sort
-          echo "==============================="
-
-      # 6. Example: Node.js setup (MERN-style)
+      # 3️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Verify Node & NPM
+      # 4️⃣ Verify Node & npm (DEBUG)
+      - name: Debug Node & npm versions
         run: |
           echo "Node version:"
           node -v
           echo "NPM version:"
           npm -v
 
-      # 7. Install dependencies with debug output
+      # 5️⃣ List repo files (DEBUG – very important)
+      - name: Debug repository structure
+        run: |
+          echo "==== Repository files ===="
+          ls -la
+          echo "=========================="
+
+      # 6️⃣ Install dependencies locally
       - name: Install dependencies
         run: |
-          echo "==== Installing dependencies ===="
+          echo "==== npm install (local) ===="
           npm install --verbose
-          echo "================================="
+          echo "=============================="
 
-      # 8. Example: Custom debug check (naming / structure)
-      - name: Debug project structure
+      # 7️⃣ Build app (optional)
+      - name: Build app
         run: |
-          echo "==== Checking folder structure ===="
-          if [ ! -d "src" ]; then
-            echo "❌ src folder NOT found"
-            exit 1
-          else
-            echo "✅ src folder found"
-          fi
+          echo "==== Build step ===="
+          npm run build --if-present
+          echo "===================="
 
-          echo "Contents of src:"
-          ls -la src
-          echo "==================================="
-
-      # 9. Example test step with debug
-      - name: Run tests (if any)
+      # 8️⃣ Setup SSH
+      - name: Setup SSH
         run: |
-          echo "==== Running tests ===="
-          npm test || {
-            echo "❌ Tests failed"
-            exit 1
-          }
-          echo "✅ Tests passed"
+          echo "==== Setting up SSH ===="
+          mkdir -p ~/.ssh
+
+          echo "Writing SSH key..."
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          echo "Scanning EC2 host key..."
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+          echo "SSH setup completed"
+          echo "======================"
+
+      # 9️⃣ Test SSH connection (DEBUG – CRITICAL)
+      - name: Debug SSH connection
+        run: |
+          echo "==== Testing SSH connection ===="
+          ssh -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=10 \
+              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+              "echo 'SSH connection successful' && whoami && hostname"
+          echo "================================"
+
+      # 🔟 Deploy to EC2 (WITH REMOTE DEBUG)
+      - name: Deploy to EC2
+        run: |
+          echo "==== Starting deployment ===="
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+            set -e
+            set -x
+
+            echo "---- Connected to EC2 ----"
+            whoami
+            hostname
+            pwd
+
+            echo "---- Moving to app directory ----"
+            cd ${{ secrets.APP_DIR }} || { echo "❌ APP_DIR not found"; exit 1; }
+
+            echo "Current directory:"
+            pwd
+
+            echo "---- Listing files ----"
+            ls -la
+
+            echo "---- Git status ----"
+            git status
+
+            echo "---- Resetting repo ----"
+            git reset --hard
+            git clean -fd
+
+            echo "---- Pulling latest code ----"
+            git pull origin main
+
+            echo "---- Installing dependencies (EC2) ----"
+            npm install --verbose
+
+            echo "---- PM2 status before restart ----"
+            pm2 list || true
+
+            echo "---- Restarting app ----"
+            pm2 restart all || pm2 start index.js --name node-backend
+
+            echo "---- PM2 status after restart ----"
+            pm2 list
+
+            echo "---- Saving PM2 ----"
+            pm2 save
+
+            echo "✅ Deployment completed successfully"
+          ENDSSH
+
+          echo "==== Deployment finished ===="
